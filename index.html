@@ -2,59 +2,192 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>リハAIカルテ</title>
+
 <style>
-body{background:#0f172a;color:white;padding:20px;font-family:sans-serif;}
-input,textarea,select,button{width:100%;margin:8px 0;padding:10px;border-radius:8px;border:none;}
-button{background:#2563eb;color:white;}
-.card{background:#1f2937;padding:10px;margin-top:10px;border-radius:10px;}
+body{background:#0f172a;color:#e5e7eb;font-family:-apple-system;margin:0;}
+.container{padding:16px;max-width:600px;margin:auto;}
+input,textarea,select{width:100%;padding:12px;margin-bottom:12px;background:#1f2933;border:none;color:white;border-radius:10px;}
+button{width:100%;padding:12px;margin-top:6px;border:none;border-radius:10px;color:white;background:#374151;}
+.primary{background:#2563eb;}
+.record{background:#ef4444;}
+.user{background:#10b981;}
+.card{background:#1f2937;padding:12px;margin:12px 0;border-radius:10px;}
+.rehab-item{display:flex;gap:10px;padding:8px 0;}
 </style>
 </head>
 
 <body>
+<div class="container">
 
-<h2>リハAIカルテ（完成版）</h2>
+<h2>リハAIカルテ</h2>
 
-<select id="disease">
-<option>膝OA</option>
-<option>腰痛</option>
-<option>脳梗塞</option>
-<option>その他</option>
-</select>
+<div id="userDisplay"></div>
+<button class="user" onclick="changeUser()">作成者変更</button>
 
-<textarea id="subjective" placeholder="主訴"></textarea>
-<textarea id="voiceText" placeholder="音声 or メモ"></textarea>
+<input id="patientName" placeholder="患者名">
 
-<button onclick="generate()">AI生成</button>
+<textarea id="subjective" placeholder="S（主訴）"></textarea>
+
+<h4>🎤 音声入力</h4>
+<button class="record" onclick="toggleRecording()">録音開始 / 停止</button>
+<textarea id="voiceInput" placeholder="音声結果"></textarea>
+
+<h4>実施内容</h4>
+<div id="treatments"></div>
+
+<textarea id="manualO" placeholder="O追記"></textarea>
+
+<button class="primary" onclick="generateSOAP()">AI生成</button>
 
 <div id="output"></div>
 
+<button onclick="saveRecord()">保存</button>
+
+<h3>自分のカルテ一覧</h3>
+<div id="records"></div>
+
+</div>
+
 <script>
-async function generate(){
- let disease=document.getElementById("disease").value;
- let subjective=document.getElementById("subjective").value;
- let voice=document.getElementById("voiceText").value;
+
+// 👤 ユーザー管理
+let currentUser = localStorage.getItem("user");
+
+if(!currentUser){
+ currentUser = prompt("作成者名を入力");
+ localStorage.setItem("user", currentUser);
+}
+
+function updateUserUI(){
+ document.getElementById("userDisplay").innerHTML = "作成者: " + currentUser;
+}
+
+function changeUser(){
+ let newUser = prompt("新しい作成者名");
+ if(newUser){
+  localStorage.setItem("user", newUser);
+  location.reload();
+ }
+}
+
+updateUserUI();
+
+
+// リハ項目
+const rehabList=["ROM訓練","筋力強化","歩行訓練","バランス訓練","ストレッチ","関節モビ"];
+rehabList.forEach(r=>{
+ treatments.innerHTML+=`
+ <div class="rehab-item">
+ <input type="checkbox" value="${r}">
+ <span>${r}</span>
+ </div>`;
+});
+
+
+// 🎤 音声
+let recognition;
+let recording=false;
+
+function toggleRecording(){
+ if(!('webkitSpeechRecognition'in window)){
+  alert("音声未対応");
+  return;
+ }
+
+ if(!recording){
+  recognition=new webkitSpeechRecognition();
+  recognition.lang="ja-JP";
+  recognition.continuous=true;
+
+  recognition.onresult=(e)=>{
+   let text="";
+   for(let i=0;i<e.results.length;i++){
+    text+=e.results[i][0].transcript;
+   }
+   voiceInput.value=text;
+  };
+
+  recognition.start();
+  recording=true;
+ }else{
+  recognition.stop();
+  recording=false;
+ }
+}
+
+
+// 🤖 AI生成
+async function generateSOAP(){
+
+ let subjective=subjective.value;
+ let voice=voiceInput.value;
+ let manualO=manualO.value;
+ let selected=[...document.querySelectorAll("input[type=checkbox]:checked")].map(c=>c.value);
 
  let res = await fetch("https://rehab-ai.onrender.com/api/generate",{
   method:"POST",
   headers:{"Content-Type":"application/json"},
   body:JSON.stringify({
-   disease,
+   disease:"その他",
    subjective,
    voice,
-   treatments:[]
+   treatments:selected
   })
  });
 
  let data = await res.json();
 
- document.getElementById("output").innerHTML=`
-  <div class="card">
-   <b>要約</b><br>${data.summary}<br><br>
-   <b>カルテ</b><br>${data.text.replace(/\\n/g,"<br>")}
-  </div>
+ output.innerHTML=`
+ <div class="card">
+  <b>作成者</b>: ${currentUser}<br><br>
+  <b>要約</b><br>${data.summary}<br><br>
+  <b>カルテ</b><br>${data.text.replace(/\n/g,"<br>")}<br><br>
+  <b>O追記</b><br>${manualO}
+ </div>
  `;
+
+ output.dataset.summary=data.summary.slice(0,30);
 }
+
+
+// 💾 保存
+function saveRecord(){
+ let records=JSON.parse(localStorage.getItem("records")||"[]");
+
+ records.push({
+  name:patientName.value,
+  summary:output.dataset.summary,
+  full:output.innerHTML,
+  user: currentUser
+ });
+
+ localStorage.setItem("records",JSON.stringify(records));
+ render();
+}
+
+
+// 📋 表示（自分だけ）
+function render(){
+ let recordsData=JSON.parse(localStorage.getItem("records")||"[]");
+
+ let myRecords = recordsData.filter(r=>r.user === currentUser);
+
+ records.innerHTML="";
+
+ myRecords.forEach(r=>{
+  records.innerHTML+=`
+  <div class="card">
+   <div><b>${r.name}</b></div>
+   <div>${r.summary}</div>
+   <div>${r.full}</div>
+  </div>`;
+ });
+}
+
+render();
+
 </script>
 
 </body>
