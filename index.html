@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>リハAIカルテ</title>
+<style>
+body{background:#0f172a;color:white;padding:20px;font-family:sans-serif;}
+input,textarea,select,button{width:100%;margin:8px 0;padding:10px;border-radius:8px;border:none;}
+button{background:#2563eb;color:white;}
+.card{background:#1f2937;padding:10px;margin-top:10px;border-radius:10px;}
+</style>
+</head>
+
+<body>
+
+<h2>リハAIカルテ（完成版）</h2>
+
+<select id="disease">
+<option>膝OA</option>
+<option>腰痛</option>
+<option>脳梗塞</option>
+<option>その他</option>
+</select>
+
+<textarea id="subjective" placeholder="主訴"></textarea>
+<textarea id="voiceText" placeholder="音声 or メモ"></textarea>
+
+<button onclick="generate()">AI生成</button>
+
+<div id="output"></div>
+
+<script>
+async function generate(){
+ let disease=document.getElementById("disease").value;
+ let subjective=document.getElementById("subjective").value;
+ let voice=document.getElementById("voiceText").value;
+
+ let res = await fetch("http://localhost:3000/api/generate",{
+  method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({
+   disease,
+   subjective,
+   voice,
+   treatments:[]
+  })
+ });
+
+ let data = await res.json();
+
+ document.getElementById("output").innerHTML=`
+  <div class="card">
+   <b>要約</b><br>${data.summary}<br><br>
+   <b>カルテ</b><br>${data.text.replace(/\\n/g,"<br>")}
+  </div>
+ `;
+}
+</script>
+
+</body>
+</html>
