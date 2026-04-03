@@ -7,76 +7,112 @@
 
 <style>
 body{background:#0f172a;color:#e5e7eb;font-family:-apple-system;margin:0;}
+
+.menu{
+ position:fixed;
+ top:0;
+ left:-100%;
+ width:260px;
+ height:100%;
+ background:#111827;
+ padding:16px;
+ transition:0.3s;
+ z-index:1000;
+}
+.menu.open{left:0;}
+
+.overlay{
+ position:fixed;
+ top:0;
+ left:0;
+ width:100%;
+ height:100%;
+ background:rgba(0,0,0,0.5);
+ display:none;
+ z-index:999;
+}
+.overlay.show{display:block;}
+
 .container{padding:16px;max-width:600px;margin:auto;}
-input,textarea,select{width:100%;padding:12px;margin-bottom:12px;background:#1f2933;border:none;color:white;border-radius:10px;}
+
+.header{display:flex;justify-content:space-between;align-items:center;}
+
+.menu-btn{font-size:26px;cursor:pointer;}
+
+input,textarea{width:100%;padding:12px;margin-bottom:12px;background:#1f2933;border:none;color:white;border-radius:10px;}
+
 button{width:100%;padding:12px;margin-top:6px;border:none;border-radius:10px;color:white;background:#374151;}
 .primary{background:#2563eb;}
 .record{background:#ef4444;}
-.user{background:#10b981;}
+.recording{background:#22c55e;}
+.loading{background:#f59e0b;}
+
 .card{background:#1f2937;padding:12px;margin:12px 0;border-radius:10px;}
+
 .rehab-item{display:flex;gap:10px;padding:8px 0;}
 </style>
 </head>
 
 <body>
+
+<div class="overlay" id="overlay" onclick="closeMenu()"></div>
+
+<div class="menu" id="menu">
+<h3>患者検索</h3>
+<input id="search" placeholder="患者名">
+<button onclick="render()">検索</button>
+<button onclick="showAll()">全件表示</button>
+<div id="patientList"></div>
+</div>
+
 <div class="container">
 
+<div class="header">
+<div class="menu-btn" onclick="openMenu()">☰</div>
 <h2>リハAIカルテ</h2>
+</div>
 
 <div id="userDisplay"></div>
-<button class="user" onclick="changeUser()">作成者変更</button>
 
 <input id="patientName" placeholder="患者名">
 
 <textarea id="subjective" placeholder="S（主訴）"></textarea>
 
 <h4>🎤 音声入力</h4>
-<button class="record" onclick="toggleRecording()">録音開始 / 停止</button>
-<textarea id="voiceInput" placeholder="音声結果"></textarea>
+<button id="recordBtn" class="record" onclick="toggleRecording()">録音開始</button>
+<textarea id="voiceInput"></textarea>
 
 <h4>実施内容</h4>
 <div id="treatments"></div>
 
 <textarea id="manualO" placeholder="O追記"></textarea>
 
-<button class="primary" onclick="generateSOAP()">AI生成</button>
+<button id="generateBtn" class="primary" onclick="generateSOAP()">AI生成</button>
 
 <div id="output"></div>
 
 <button onclick="saveRecord()">保存</button>
 
-<h3>自分のカルテ一覧</h3>
+<h3>カルテ一覧</h3>
 <div id="records"></div>
 
 </div>
 
 <script>
 
-// 👤 ユーザー管理
-let currentUser = localStorage.getItem("user");
-
-if(!currentUser){
- currentUser = prompt("作成者名を入力");
- localStorage.setItem("user", currentUser);
-}
-
-function updateUserUI(){
- document.getElementById("userDisplay").innerHTML = "作成者: " + currentUser;
-}
-
-function changeUser(){
- let newUser = prompt("新しい作成者名");
- if(newUser){
-  localStorage.setItem("user", newUser);
-  location.reload();
- }
-}
-
-updateUserUI();
+// ユーザー
+let currentUser = localStorage.getItem("user") || prompt("作成者名入力");
+localStorage.setItem("user", currentUser);
+userDisplay.innerHTML="作成者: "+currentUser;
 
 
-// リハ項目
-const rehabList=["ROM訓練","筋力強化","歩行訓練","バランス訓練","ストレッチ","関節モビ"];
+// メニュー
+function openMenu(){menu.classList.add("open");overlay.classList.add("show");}
+function closeMenu(){menu.classList.remove("open");overlay.classList.remove("show");}
+
+
+// リハ
+const rehabList=["ROM訓練","筋力強化","歩行訓練","バランス訓練","ストレッチ"];
 rehabList.forEach(r=>{
  treatments.innerHTML+=`
  <div class="rehab-item">
@@ -86,7 +122,7 @@ rehabList.forEach(r=>{
 });
 
 
-// 🎤 音声
+// 🎤 録音
 let recognition;
 let recording=false;
 
@@ -111,29 +147,34 @@ function toggleRecording(){
 
   recognition.start();
   recording=true;
+
+  recordBtn.textContent="録音中...";
+  recordBtn.classList.add("recording");
+
  }else{
   recognition.stop();
   recording=false;
+
+  recordBtn.textContent="録音開始";
+  recordBtn.classList.remove("recording");
  }
 }
 
 
-// 🤖 AI生成
+// 🤖 AI
 async function generateSOAP(){
 
- let subjective=subjective.value;
- let voice=voiceInput.value;
- let manualO=manualO.value;
- let selected=[...document.querySelectorAll("input[type=checkbox]:checked")].map(c=>c.value);
+ generateBtn.textContent="生成中...";
+ generateBtn.disabled=true;
+ generateBtn.classList.add("loading");
 
  let res = await fetch("https://rehab-ai.onrender.com/api/generate",{
   method:"POST",
   headers:{"Content-Type":"application/json"},
   body:JSON.stringify({
-   disease:"その他",
-   subjective,
-   voice,
-   treatments:selected
+   subjective:subjective.value,
+   voice:voiceInput.value,
+   treatments:[...document.querySelectorAll("input:checked")].map(c=>c.value)
   })
  });
 
@@ -141,49 +182,61 @@ async function generateSOAP(){
 
  output.innerHTML=`
  <div class="card">
-  <b>作成者</b>: ${currentUser}<br><br>
-  <b>要約</b><br>${data.summary}<br><br>
-  <b>カルテ</b><br>${data.text.replace(/\n/g,"<br>")}<br><br>
-  <b>O追記</b><br>${manualO}
- </div>
- `;
+ <b>${data.summary}</b><br><br>
+ ${data.text.replace(/\n/g,"<br>")}
+ </div>`;
 
- output.dataset.summary=data.summary.slice(0,30);
+ generateBtn.textContent="AI生成";
+ generateBtn.disabled=false;
+ generateBtn.classList.remove("loading");
 }
 
 
-// 💾 保存
+// 保存
 function saveRecord(){
- let records=JSON.parse(localStorage.getItem("records")||"[]");
+ let data=JSON.parse(localStorage.getItem("records")||"[]");
 
- records.push({
+ data.push({
   name:patientName.value,
-  summary:output.dataset.summary,
-  full:output.innerHTML,
-  user: currentUser
+  user:currentUser,
+  summary:output.innerText
  });
 
- localStorage.setItem("records",JSON.stringify(records));
+ localStorage.setItem("records",JSON.stringify(data));
  render();
 }
 
 
-// 📋 表示（自分だけ）
+// 表示
 function render(){
- let recordsData=JSON.parse(localStorage.getItem("records")||"[]");
+ let keyword=search.value;
 
- let myRecords = recordsData.filter(r=>r.user === currentUser);
+ let data=JSON.parse(localStorage.getItem("records")||"[]")
+ .filter(r=>r.user===currentUser && r.name.includes(keyword));
 
  records.innerHTML="";
+ patientList.innerHTML="";
 
- myRecords.forEach(r=>{
-  records.innerHTML+=`
-  <div class="card">
-   <div><b>${r.name}</b></div>
-   <div>${r.summary}</div>
-   <div>${r.full}</div>
-  </div>`;
+ let names=[...new Set(data.map(r=>r.name))];
+
+ names.forEach(n=>{
+  patientList.innerHTML+=`<div class="card" onclick="filterPatient('${n}')">${n}</div>`;
  });
+
+ data.forEach(r=>{
+  records.innerHTML+=`<div class="card">${r.name}<br>${r.summary}</div>`;
+ });
+}
+
+function showAll(){
+ search.value="";
+ render();
+}
+
+function filterPatient(name){
+ search.value=name;
+ render();
+ closeMenu();
 }
 
 render();
